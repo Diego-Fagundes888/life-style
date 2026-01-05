@@ -1,0 +1,35 @@
+/* Journal Page - Dark Academia Styles */
+/* These styles override the global body color for paper pages */
+
+.paper-page-left,
+.paper-page-left * {
+    color: #1a1410 !important;
+}
+
+.paper-page-right-new,
+.paper-page-right-new * {
+    color: #1a1410 !important;
+}
+
+.mobile-paper,
+.mobile-paper * {
+    color: #1a1410 !important;
+}
+
+.mobile-journal-input {
+    font-family: 'Merriweather', Georgia, serif !important;
+    color: #1a1410 !important;
+}
+
+.mobile-journal-input::placeholder {
+    color: rgba(60, 50, 40, 0.5) !important;
+}
+
+.journal-input-new {
+    font-family: 'Merriweather', Georgia, serif !important;
+    color: #1a1410 !important;
+}
+
+.journal-input-new::placeholder {
+    color: rgba(60, 50, 40, 0.5) !important;
+}
