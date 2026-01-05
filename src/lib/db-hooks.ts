@@ -360,3 +360,73 @@ export async function toggleTaskCompletion(taskId: string): Promise<void> {
 export async function saveWeeklyFocus(focus: DBWeeklyFocus): Promise<string> {
     return db.weeklyFocus.put(focus);
 }
+
+// ============================================================================
+// TIME BLOCKS HOOKS
+// ============================================================================
+
+/**
+ * Hook para listar todos os blocos de tempo ordenados.
+ */
+export function useTimeBlocksQuery() {
+    return useLiveQuery(
+        () => db.timeBlocks.orderBy("order").toArray(),
+        [],
+        []
+    );
+}
+
+/**
+ * Hook para um bloco de tempo específico.
+ */
+export function useTimeBlockQuery(id: string | undefined) {
+    return useLiveQuery(
+        () => (id ? db.timeBlocks.get(id) : undefined),
+        [id],
+        undefined
+    );
+}
+
+// ============================================================================
+// TIME BLOCKS MUTATIONS
+// ============================================================================
+
+import type { DBTimeBlock } from "./db";
+
+/**
+ * Adiciona ou atualiza um bloco de tempo.
+ */
+export async function saveTimeBlock(block: DBTimeBlock): Promise<string> {
+    return db.timeBlocks.put(block);
+}
+
+/**
+ * Deleta um bloco de tempo.
+ */
+export async function deleteTimeBlock(id: string): Promise<void> {
+    await db.timeBlocks.delete(id);
+}
+
+/**
+ * Atualiza a ordem dos blocos após reordenação (drag & drop).
+ */
+export async function reorderTimeBlocks(
+    blocks: { id: string; order: number }[]
+): Promise<void> {
+    await db.transaction("rw", db.timeBlocks, async () => {
+        for (const { id, order } of blocks) {
+            await db.timeBlocks.update(id, { order });
+        }
+    });
+}
+
+/**
+ * Cria um novo bloco de tempo com ID único.
+ */
+export async function createTimeBlock(
+    block: Omit<DBTimeBlock, "id">
+): Promise<string> {
+    const id = `tb_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    return db.timeBlocks.put({ ...block, id });
+}
+

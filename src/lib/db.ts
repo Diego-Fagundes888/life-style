@@ -180,6 +180,19 @@ export interface DBNotification {
     createdAt: string;
 }
 
+/** Bloco de tempo para rotina diária */
+export interface DBTimeBlock {
+    id: string;
+    startHour: number;
+    startMinute: number;
+    endHour: number;
+    endMinute: number;
+    title: string;
+    category: "deep-work" | "routine" | "rest" | "social" | "health";
+    icon: string;
+    order: number;
+}
+
 // ============================================================================
 // DATABASE CLASS
 // ============================================================================
@@ -200,6 +213,7 @@ export class LifeSyncDB extends Dexie {
     lifeScoreHistory!: EntityTable<DBLifeScoreHistory, "id">;
     achievements!: EntityTable<DBAchievement, "id">;
     notifications!: EntityTable<DBNotification, "id">;
+    timeBlocks!: EntityTable<DBTimeBlock, "id">;
 
     constructor() {
         super("LifeSyncDB");
@@ -221,6 +235,27 @@ export class LifeSyncDB extends Dexie {
             lifeScoreHistory: "id, date",
             achievements: "id, achievementId, category, unlockedAt",
             notifications: "id, type, read, createdAt",
+            timeBlocks: "id, startHour, order",
+        });
+
+        // Schema versão 2 - Adiciona timeBlocks com dados padrão
+        this.version(2).stores({
+            habits: "id, category, archived, createdAt",
+            tasks: "id, date, completed, category",
+            weeklyFocus: "id, weekStart",
+            goals: "id, categoryId, type",
+            goalCategories: "id, order",
+            dreams: "id, category, status, priority, createdAt",
+            lifeAreas: "id, updatedAt",
+            monthlyReviews: "id, month, year, finalized",
+            settings: "id, key",
+            userProfile: "id",
+            financeData: "id",
+            assetAllocations: "id, order",
+            lifeScoreHistory: "id, date",
+            achievements: "id, achievementId, category, unlockedAt",
+            notifications: "id, type, read, createdAt",
+            timeBlocks: "id, startHour, order",
         });
     }
 }
@@ -441,6 +476,7 @@ export async function clearAllData(): Promise<void> {
             db.lifeScoreHistory,
             db.achievements,
             db.notifications,
+            db.timeBlocks,
         ],
         async () => {
             await db.habits.clear();
@@ -458,6 +494,7 @@ export async function clearAllData(): Promise<void> {
             await db.lifeScoreHistory.clear();
             await db.achievements.clear();
             await db.notifications.clear();
+            await db.timeBlocks.clear();
         }
     );
 
@@ -494,6 +531,7 @@ export async function exportAllData(): Promise<{
     data.lifeScoreHistory = await db.lifeScoreHistory.toArray();
     data.achievements = await db.achievements.toArray();
     data.notifications = await db.notifications.toArray();
+    data.timeBlocks = await db.timeBlocks.toArray();
 
     return {
         version: 1,
@@ -547,6 +585,8 @@ export async function importBackupData(backup: {
             await db.achievements.bulkPut(backup.data.achievements as DBAchievement[]);
         if (backup.data.notifications)
             await db.notifications.bulkPut(backup.data.notifications as DBNotification[]);
+        if (backup.data.timeBlocks)
+            await db.timeBlocks.bulkPut(backup.data.timeBlocks as DBTimeBlock[]);
 
         console.log("[DB] Backup imported successfully");
         return true;
@@ -574,3 +614,87 @@ export async function downloadBackup(): Promise<void> {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 }
+
+// ============================================================================
+// TIME BLOCKS - DEFAULT DATA & UTILITIES
+// ============================================================================
+
+/** Blocos de tempo padrão para rotina diária */
+export const DEFAULT_TIME_BLOCKS: DBTimeBlock[] = [
+    { id: "1", startHour: 5, startMinute: 0, endHour: 6, endMinute: 0, title: "Despertar & Rotina Matinal", category: "routine", icon: "Sun", order: 0 },
+    { id: "2", startHour: 6, startMinute: 0, endHour: 7, endMinute: 0, title: "Exercício Físico", category: "health", icon: "Dumbbell", order: 1 },
+    { id: "3", startHour: 7, startMinute: 0, endHour: 8, endMinute: 0, title: "Café & Planejamento", category: "routine", icon: "Coffee", order: 2 },
+    { id: "4", startHour: 8, startMinute: 0, endHour: 12, endMinute: 0, title: "Deep Work", category: "deep-work", icon: "Brain", order: 3 },
+    { id: "5", startHour: 12, startMinute: 0, endHour: 13, endMinute: 0, title: "Almoço & Descanso", category: "rest", icon: "UtensilsCrossed", order: 4 },
+    { id: "6", startHour: 13, startMinute: 0, endHour: 17, endMinute: 0, title: "Trabalho Focado", category: "deep-work", icon: "Code", order: 5 },
+    { id: "7", startHour: 17, startMinute: 0, endHour: 19, endMinute: 0, title: "Tempo Pessoal", category: "social", icon: "Users", order: 6 },
+    { id: "8", startHour: 19, startMinute: 0, endHour: 21, endMinute: 0, title: "Jantar & Família", category: "social", icon: "Users", order: 7 },
+    { id: "9", startHour: 21, startMinute: 0, endHour: 22, endMinute: 0, title: "Leitura & Reflexão", category: "rest", icon: "BookOpen", order: 8 },
+    { id: "10", startHour: 22, startMinute: 0, endHour: 5, endMinute: 0, title: "Sono", category: "rest", icon: "Moon", order: 9 },
+];
+
+/**
+ * Popula os blocos de tempo padrão se a tabela estiver vazia.
+ * Deve ser chamado na inicialização do app.
+ */
+export async function seedDefaultTimeBlocks(): Promise<void> {
+    const count = await db.timeBlocks.count();
+    if (count === 0) {
+        console.log("[DB] Seeding default time blocks...");
+        await db.timeBlocks.bulkPut(DEFAULT_TIME_BLOCKS);
+        console.log("[DB] Default time blocks seeded.");
+    }
+}
+
+/**
+ * Retorna o bloco de tempo atual baseado no horário.
+ */
+export function getCurrentTimeBlockFromList(
+    blocks: DBTimeBlock[],
+    hours: number,
+    minutes: number
+): DBTimeBlock | null {
+    const currentMinutes = hours * 60 + minutes;
+
+    for (const block of blocks) {
+        const startMinutes = block.startHour * 60 + block.startMinute;
+        let endMinutes = block.endHour * 60 + block.endMinute;
+
+        // Handle overnight blocks (e.g., 22:00 - 05:00)
+        if (endMinutes <= startMinutes) {
+            endMinutes += 24 * 60;
+            const adjustedCurrent = currentMinutes < startMinutes
+                ? currentMinutes + 24 * 60
+                : currentMinutes;
+            if (adjustedCurrent >= startMinutes && adjustedCurrent < endMinutes) {
+                return block;
+            }
+        } else {
+            if (currentMinutes >= startMinutes && currentMinutes < endMinutes) {
+                return block;
+            }
+        }
+    }
+    return null;
+}
+
+/**
+ * Retorna o próximo bloco de tempo.
+ */
+export function getNextTimeBlockFromList(
+    blocks: DBTimeBlock[],
+    hours: number,
+    minutes: number
+): DBTimeBlock | null {
+    if (blocks.length === 0) return null;
+
+    const sortedBlocks = [...blocks].sort((a, b) => a.order - b.order);
+    const currentBlock = getCurrentTimeBlockFromList(sortedBlocks, hours, minutes);
+
+    if (!currentBlock) return sortedBlocks[0];
+
+    const currentIndex = sortedBlocks.findIndex(b => b.id === currentBlock.id);
+    const nextIndex = (currentIndex + 1) % sortedBlocks.length;
+    return sortedBlocks[nextIndex];
+}
+
